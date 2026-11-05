@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClaudeStatus 桌宠</title>
+<meta name="description" content="ClaudeStatus：Claude Code 状态桌宠、模型与供应商切换、Token 用量、集群作业监督。作者 DJANDY07。">
+<meta name="author" content="DJANDY07">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a "desktop corner" stage (hook log terminal + the pet) that replays one Claude Code
+   session, then plain reference sections. Pixel face only for Latin display words. */
+:root {
+  --bg: #eef1f4;            /* cool paper */
+  --surface: #ffffff;
+  --ink: #1d2430;
+  --muted: #5d6878;
+  --line: #d5dbe3;
+  --accent: #e8661c;        /* her hair */
+  --accent-ink: #b84a0c;
+  --desk: #c9d6e2;          /* wallpaper */
+  --desk-2: #b3c4d4;
+  --term: #171c24;
+  --term-ink: #cfd8e3;
+  --term-dim: #7a8798;
+  --ok: #2f9e5b; --warn: #d98a12; --wait: #2f7fd1;
+  --bubble: #fff8ee; --bubble-ink: #3a2a1e;
+  --f-display: "Pixelify Sans", "Noto Sans SC", system-ui, sans-serif;
+  --f-body: "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161d; --surface: #1a2029; --ink: #e6ebf2; --muted: #9aa6b6; --line: #2a323e;
+  --accent: #f07a2e; --accent-ink: #ffa465; --desk: #233042; --desk-2: #1b2534;
+  --term: #0b0e13; --term-ink: #cfd8e3; --term-dim: #6c7889; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --ink: #e6ebf2; --muted: #9aa6b6; --line: #2a323e;
+  --accent: #f07a2e; --accent-ink: #ffa465; --desk: #233042; --desk-2: #1b2534;
+  --term: #0b0e13; --term-ink: #cfd8e3; --term-dim: #6c7889; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.7 var(--f-body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 40px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- header ---------- */
+header { display: grid; gap: 12px; }
+.brand { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; }
+h1 { font: 700 clamp(40px, 7vw, 64px)/1 var(--f-display); letter-spacing: .5px; }
+h1 b { color: var(--accent); font-weight: 700; }
+.by { font: 600 13px/1 var(--f-mono); color: var(--muted); letter-spacing: .08em; }
+.by strong { color: var(--ink); }
+.lede { max-width: 62ch; font-size: 17px; color: var(--muted); }
+.lede em { font-style: normal; color: var(--ink); font-weight: 500; }
+
+/* ---------- stage ---------- */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden; background: var(--surface); }
+.term { background: var(--term); color: var(--term-ink); font: 400 12.5px/1.65 var(--f-mono); display: grid;
+  grid-template-rows: auto 1fr; min-width: 0; min-height: 340px; }
+.term-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #ffffff14; color: var(--term-dim); }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #ffffff22; }
+.term-bar span { margin-left: 8px; }
+.log { padding: 12px 14px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; }
+.log div { white-space: pre-wrap; word-break: break-all; }
+.log .t { color: var(--term-dim); }
+.log .ev { color: #8cc8ff; }
+.log .st-working { color: #ffc46b; } .log .st-waiting { color: #7fb8ff; } .log .st-complete { color: #79e0a0; }
+.log .st-idle, .log .st-connecting { color: #c9b9a6; }
+.log .new { animation: in .25s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(4px); } }
+
+.desk { position: relative; min-height: 420px; overflow: hidden;
+  background: linear-gradient(160deg, var(--desk), var(--desk-2)); }
+.desk::after { content: ""; position: absolute; inset: auto 0 0; height: 34px; background: color-mix(in srgb, var(--term) 82%, transparent); }
+.clock { position: absolute; right: 14px; bottom: 8px; z-index: 2; font: 500 12px/18px var(--f-mono); color: #e6ebf2; }
+.pet { position: absolute; bottom: 30px; right: 36px; z-index: 3; cursor: pointer; user-select: none; touch-action: manipulation; }
+.pet canvas { display: block; image-rendering: pixelated; }
+.pet.hop { animation: hop .8s steps(1, end); }
+@keyframes hop { 0%, 40% { transform: translateY(-6px); } 20%, 60%, 100% { transform: none; } }
+.tag { position: absolute; left: 50%; bottom: -2px; transform: translateX(-50%); white-space: nowrap; display: flex; gap: 6px; align-items: center;
+  padding: 3px 9px; border-radius: 999px; background: rgba(30, 24, 20, .82); color: #fff4e6; font: 600 11px/1.3 var(--f-body); }
+.tag .dot { width: 7px; height: 7px; border-radius: 50%; background: #c8b9a6; }
+.tag[data-s="working"] .dot { background: #f5a524; } .tag[data-s="waiting"] .dot { background: #4aa3ff; }
+.tag[data-s="complete"] .dot { background: #3ccf74; }
+.tag .tok { color: #ffcf8a; font-weight: 500; }
+.tag .cl { color: #c9e6ff; font-weight: 500; } .tag .cl:empty { display: none; } .tag .cl.attn { color: #ff9b9b; font-weight: 700; }
+
+.talk { position: absolute; top: 4px; right: 44%; width: max-content; max-width: 210px; padding: 4px 9px 5px; border-radius: 12px; z-index: 4;
+  background: var(--bubble); color: var(--bubble-ink); border: 2px solid var(--bubble-ink);
+  font: 700 12.5px/1.35 var(--f-body); white-space: pre-line; opacity: 0; transform: translateY(4px) scale(.9);
+  transform-origin: 85% 100%; transition: opacity .18s, transform .18s; }
+.talk.on { opacity: 1; transform: none; }
+.talk.think::before, .talk.think::after { content: ""; position: absolute; background: var(--bubble); border: 2px solid var(--bubble-ink); border-radius: 50%; }
+.talk.think::before { width: 8px; height: 8px; right: 6px; bottom: -12px; }
+.talk.think::after { width: 5px; height: 5px; right: -2px; bottom: -19px; }
+.talk.say::after { content: ""; position: absolute; right: 14px; bottom: -6px; width: 8px; height: 8px; background: var(--bubble);
+  border: 2px solid var(--bubble-ink); border-top: 0; border-left: 0; transform: rotate(45deg); }
+
+.card { position: absolute; z-index: 5; width: 230px; padding: 10px 12px; border-radius: 12px; background: var(--bubble); color: var(--bubble-ink);
+  border: 2px solid var(--bubble-ink); box-shadow: 0 3px 0 var(--bubble-ink); font: 500 12px/1.45 var(--f-body);
+  opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .25s cubic-bezier(.3, 1.5, .5, 1); pointer-events: none; }
+.card.on { opacity: 1; transform: none; }
+.card h4 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.card h4 small { color: #8a7461; font-weight: 600; }
+.notice { left: 18px; top: 18px; }
+.notice .row { display: flex; gap: 7px; align-items: center; font-weight: 700; }
+.notice .row i { width: 8px; height: 8px; border-radius: 50%; background: #f5a524; flex: none; }
+.notice .row i.ok { background: #3ccf74; }
+.notice .sub { color: #8a7461; padding-left: 15px; }
+.quota { left: 18px; top: 18px; }
+.q { margin-top: 7px; } .q:first-of-type { margin-top: 0; }
+.q .l { display: flex; font-weight: 700; } .q .l b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.bar { height: 8px; margin-top: 3px; border-radius: 4px; background: #eadbc6; border: 1.5px solid var(--bubble-ink); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: #3ccf74; transition: width .6s ease-out; }
+.bar.w i { background: #f5a524; }
+.q small { display: block; color: #8a7461; font-size: 11px; }
+.example { color: #8a7461; font-size: 10.5px; margin-top: 6px; }
+
+/* ---------- controls under the stage ---------- */
+.player { display: grid; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chips button { font: 500 13px/1 var(--f-body); padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+.chips button[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chips .play { font-family: var(--f-mono); min-width: 44px; }
+.caption { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: baseline; max-width: 70ch; }
+.caption .k { font: 600 12px/1 var(--f-mono); color: var(--accent-ink); text-transform: uppercase; letter-spacing: .08em; }
+.caption p { font-size: 16px; }
+.progress { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); }
+.hint { color: var(--muted); font-size: 13px; }
+
+/* ---------- reference sections ---------- */
+section { display: grid; gap: 20px; }
+h2 { font: 700 26px/1.2 var(--f-body); }
+h2 .px { font-family: var(--f-display); color: var(--accent); margin-right: 8px; }
+.features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.feat { background: var(--surface); padding: 18px 18px 20px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.feat h3 { font-size: 16px; font-weight: 700; }
+.feat p { color: var(--muted); font-size: 14px; }
+.feat code, .steps code, .flow code { font: 400 12.5px/1.5 var(--f-mono); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+
+.tools { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14px; }
+th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font: 600 12px/1 var(--f-mono); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+tr:last-child td { border-bottom: 0; }
+td.mono { font: 400 13px/1.4 var(--f-mono); }
+td canvas { image-rendering: pixelated; display: block; }
+
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; counter-reset: f; }
+.flow div { border-top: 3px solid var(--accent); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
+.flow div::before { counter-increment: f; content: "0" counter(f); font: 600 12px/1 var(--f-mono); color: var(--accent-ink); }
+.flow b { font-size: 15px; }
+.flow p { color: var(--muted); font-size: 14px; }
+
+.steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; max-width: 70ch; }
+.steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; }
+.steps li span { font: 600 13px/1.7 var(--f-mono); color: var(--accent-ink); }
+.cmd { font: 400 13px/1.6 var(--f-mono); background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
+
+.cluster { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.cl-text { display: grid; gap: 16px; min-width: 0; }
+.cl-text > p { max-width: 62ch; color: var(--muted); font-size: 16px; }
+.cl-text dl { margin: 0; display: grid; gap: 12px; }
+.cl-text dl div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.cl-text dt { font-weight: 700; }
+.cl-text dd { margin: 0; color: var(--muted); font-size: 14px; }
+.cl-text code { font: 400 12.5px/1.5 var(--f-mono); color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
+.panel { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 12px; display: grid; gap: 6px; min-width: 0; font-size: 13.5px; }
+.p-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.p-head b { font-size: 15px; } .p-head span { color: var(--muted); font: 400 12px/1.4 var(--f-mono); }
+.p-sec { margin-top: 6px; font: 600 11.5px/1 var(--f-mono); color: var(--muted); letter-spacing: .06em; }
+.p-row { display: flex; gap: 10px; align-items: center; }
+.p-row > div { display: grid; min-width: 0; flex: 1; }
+.p-row small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.p-row > i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.p-row i.bad { background: #e5484d; } .p-row i.run { background: var(--warn); } .p-row i.pend { background: transparent; border: 1.5px solid var(--muted); }
+.badge { font: 600 11.5px/1 var(--f-body); padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+.badge.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.need { background: color-mix(in srgb, #e5484d 14%, transparent); color: #e5484d; }
+.p-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.p-btns span { font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); }
+.panel figcaption { color: var(--muted); font-size: 11.5px; text-align: right; }
+@media (max-width: 820px) { .cluster { grid-template-columns: minmax(0, 1fr); } }
+
+footer { border-top: 1px solid var(--line); padding-top: 20px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; color: var(--muted); font-size: 13px; }
+footer strong { color: var(--ink); font-family: var(--f-mono); }
+
+@media (max-width: 820px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .term { order: 2; min-height: 220px; }
+  .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .features, .flow { grid-template-columns: minmax(0, 1fr); }
+  .desk { min-height: 360px; }
+  .pet { right: 12px; }
+  .card { width: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .log .new, .pet.hop { animation: none; }
+  .talk, .card, .bar i { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Claude<b>Status</b></h1>
+      <span class="by">by <strong>DJANDY07</strong></span>
+    </div>
+    <p class="lede">一个 Windows 上的 Claude Code 小工具：<em>状态桌宠</em>告诉你 Claude 正在做什么，<em>一键切换</em>模型和供应商，<em>Token 用量</em>和订阅额度随手可看，还能盯着服务器上的<em>集群作业</em>。下面是一段完整会话的回放。</p>
+  </header>
+
+  <div class="player">
+    <div class="stage" id="stage">
+      <div class="term" aria-label="Hook 事件日志">
+        <div class="term-bar"><i></i><i></i><i></i><span>~/.claudestatus/events.log</span></div>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="desk" id="desk">
+        <div class="card notice" id="notice" aria-hidden="true">
+          <div class="row"><i id="nDot"></i><span id="nTitle">Claude 在等你</span></div>
+          <div class="sub" id="nText">会话：claudestatus · 已等 2 分钟</div>
+        </div>
+        <div class="card quota" id="quota" aria-hidden="true">
+          <h4>Claude 额度 <small>Pro</small></h4>
+          <div class="q"><div class="l">5 小时窗口<b>23%</b></div><div class="bar"><i data-w="23"></i></div><small>3 小时 25 分后重置</small></div>
+          <div class="q"><div class="l">本周 · 全部模型<b>53%</b></div><div class="bar"><i data-w="53"></i></div><small>周六 21:59 重置</small></div>
+          <div class="example">示例数据</div>
+        </div>
+        <div class="pet" id="pet" role="button" tabindex="0" aria-label="桌宠：点一下戳她">
+          <div class="talk" id="talk"></div>
+          <canvas id="sprite" width="192" height="256"></canvas>
+          <div class="tag" id="tag" data-s="idle"><span class="dot"></span><span id="label">空闲</span><span class="tok">1.2M</span><span class="cl" id="cl"></span></div>
+        </div>
+        <div class="clock" id="clock">14:32</div>
+      </div>
+    </div>
+    <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+    <div class="chips" id="chips" role="group" aria-label="跳到演示段落">
+      <button class="play" id="play" type="button" aria-label="暂停">❚❚</button>
+    </div>
+    <div class="caption"><span class="k" id="capk">01</span><p id="cap"></p></div>
+    <p class="hint">点桌宠可以戳她；点上面的标签跳到对应段落。</p>
+  </div>
+
+  <section aria-labelledby="f-h">
+    <h2 id="f-h"><span class="px">01</span>功能</h2>
+    <div class="features">
+      <div class="feat"><h3>状态桌宠</h3><p>多个会话一起汇总：等你 &gt; 出错 &gt; 完成 &gt; 工作中 &gt; 空闲 &gt; 离线，桌宠永远显示最需要你看的那个。</p></div>
+      <div class="feat"><h3>思考气泡</h3><p>按当前工具说一句话，比如「📖 翻翻文件…」「⌨️ 跑个命令」。只看工具名，从不读取提示词。</p></div>
+      <div class="feat"><h3>完成小结</h3><p>一轮结束时报告用时和工具调用次数，然后撒一把星星。</p></div>
+      <div class="feat"><h3>等你提醒</h3><p>等你 30 秒跳一跳，2 分钟在消息框里留言，处理后自动撤掉。不弹系统通知。</p></div>
+      <div class="feat"><h3>戳一戳 · 额度</h3><p>戳她会害羞或鼓脸；用官方 Claude 登录时，头顶浮出 5 小时窗口和本周额度。</p></div>
+      <div class="feat"><h3>AFK 挂机</h3><p>关掉所有闲时提示和闲聊，只保留集群作业监督，适合离开电脑时。</p></div>
+      <div class="feat"><h3>切换模型</h3><p>写 <code>~/.claude/settings.json</code> 的 <code>model</code>：默认 / Opus / Sonnet / Haiku / Opus Plan。</p></div>
+      <div class="feat"><h3>切换供应商</h3><p>只覆盖 <code>env.ANTHROPIC_*</code>，其它设置原样保留；每次写入前自动备份。</p></div>
+      <div class="feat"><h3>Token 用量</h3><p>增量解析会话记录：今日、近 5 小时、近 7 天、按模型、最近会话。</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-h">
+    <h2 id="t-h"><span class="px">02</span>每种工具一套动画</h2>
+    <div class="tools">
+      <table>
+        <thead><tr><th>动画</th><th>Claude Code 工具</th><th>气泡</th></tr></thead>
+        <tbody id="toolrows"></tbody>
+      </table>
+    </div>
+    <p class="hint">Claude 一秒内常换好几个工具，每个动画至少停留 3 秒，画面不会乱跳。</p>
+  </section>
+
+  <section aria-labelledby="c-h">
+    <h2 id="c-h"><span class="px">03</span>集群作业监督</h2>
+    <div class="cluster">
+      <div class="cl-text">
+        <p>挂在服务器上的计算作业，不用守着终端看。ClaudeStatus 定时用 SSH 读一次集群上的摘要脚本，这一步不调用模型、不花 token；只有真遇到问题，才在后台唤起 Claude。</p>
+        <dl>
+          <div><dt>标签角标</dt><dd>桌宠标签上直接显示 <code>⚙ 运行+排队</code>、<code>⚠ 待处理</code>，Claude 在处理时显示 <code>🔧</code>。</dd></div>
+          <div><dt>有事叫你</dt><dd>出现没人处理的问题时，空闲的桌宠会举手提醒，标签变成「集群待处理」。</dd></div>
+          <div><dt>自动唤起</dt><dd>待处理事件自动交给后台的 Claude 去查、去修；失败有重试上限，每天有次数上限。</dd></div>
+          <div><dt>结果通知</dt><dd>批次完成、按日期打包好的结果包（批数、文件数、大小、路径）写进消息框，留到你关掉为止。</dd></div>
+          <div><dt>报告与续聊</dt><dd>每次唤起都留下报告、花费和结论（完成 / 需要你 / 失败），可以一键在终端里接着那次对话。</dd></div>
+          <div><dt>AFK 也在</dt><dd>开启 AFK 后其它提示全部安静，集群监督照常运行。</dd></div>
+        </dl>
+      </div>
+      <figure class="panel" aria-label="面板里的集群页（示例数据）">
+        <div class="p-head"><b>集群</b><span>14:32 · 运行 3 · 排队 1 · 待处理 1</span></div>
+        <div class="p-sec">待处理</div>
+        <div class="p-row"><i class="bad"></i><div><b>batch_0412 · SCF 不收敛</b><small>CP2K · job 881203 · 已自动唤起 Claude</small></div></div>
+        <div class="p-sec">运行中的作业</div>
+        <div class="p-row"><i class="run"></i><div><b>batch_0413</b><small>LAMMPS · RUNNING · 2:14:05</small></div></div>
+        <div class="p-row"><i class="run"></i><div><b>batch_0414</b><small>LAMMPS · RUNNING · 0:41:52</small></div></div>
+        <div class="p-row"><i class="pend"></i><div><b>batch_0415</b><small>CP2K · PENDING</small></div></div>
+        <div class="p-sec">Claude 唤起记录</div>
+        <div class="p-row"><div><b>处理待办 · 自动</b><small>11-04 22:10 · $0.42</small></div><span class="badge ok">完成</span></div>
+        <div class="p-row"><div><b>检查</b><small>11-04 09:03 · $0.18</small></div><span class="badge need">需要你</span></div>
+        <div class="p-btns"><span>一键检查</span><span>让 Claude 检查并汇报</span><span>处理待办</span></div>
+        <figcaption>示例数据</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-h">
+    <h2 id="h-h"><span class="px">04</span>工作原理</h2>
+    <div class="flow">
+      <div><b>Claude Code Hooks</b><p>每个事件调用一次小脚本，只记事件名、工具名、目录和时间戳。</p></div>
+      <div><b>会话状态文件</b><p>写到 <code>~/.claudestatus/sessions/&lt;id&gt;.json</code>，原子写入，不阻塞 Claude。</p></div>
+      <div><b>汇总</b><p>多会话按优先级合并；窗口关掉没发 SessionEnd 也会按进程判断清理。</p></div>
+      <div><b>桌宠</b><p>播放对应动画和气泡；像素统一在 192×256 网格，屏幕上 1 像素对 1 像素。</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="i-h">
+    <h2 id="i-h"><span class="px">05</span>安装</h2>
+    <div class="cmd">npm install
+npm start          # 或双击 start.bat
+npm run dist       # 打包成 Windows 便携版 exe</div>
+    <ol class="steps">
+      <li><span>1</span><p>首次启动在面板里点「一键安装」状态 Hook，然后新开一个 Claude Code 会话。</p></li>
+      <li><span>2</span><p>拖动移动桌宠，双击打开面板，右键快速切换模型和供应商、开关 AFK 和闲聊气泡。</p></li>
+      <li><span>3</span><p>卸载 Hook 只移除带 <code>claudestatus</code> 标记的条目，你自己的 Hook 不受影响。</p></li>
+    </ol>
+  </section>
+
+  <footer>
+    <span>作者 <strong>DJANDY07</strong></span>
+    <span>桌宠渲染器与原始像素素材来自 state-interface（MIT）。社区项目，与 Anthropic 无关。</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const SPR = {"idle":{"n":3,"seq":[[0,3200],[1,90],[2,140],[1,90],[0,1400]],"loop":true},"connecting":{"n":4,"seq":[[0,350],[1,180],[2,420],[1,170],[3,180],[0,250]],"loop":true},"thinking":{"n":4,"seq":[[0,1400],[1,1200],[0,900],[2,120],[0,1000],[3,900]],"loop":true},"read":{"n":4,"seq":[[0,900],[1,900],[2,260],[3,900]],"loop":true},"search":{"n":3,"seq":[[0,650],[1,550],[0,550],[1,650],[2,900]],"loop":true},"terminal":{"n":3,"seq":[[1,240],[0,240],[1,240],[0,240],[1,400],[2,520]],"loop":true},"web":{"n":4,"seq":[[0,600],[1,600],[2,600],[3,800]],"loop":true},"agents":{"n":4,"seq":[[0,550],[1,450],[2,450],[3,900]],"loop":true},"plan":{"n":4,"seq":[[0,800],[1,650],[2,650],[3,1300]],"loop":true},"waiting":{"n":6,"seq":[[0,1100],[1,240],[2,260],[3,1000],[4,280],[5,1120]],"loop":true},"complete":{"n":6,"seq":[[0,900],[1,260],[2,300],[3,1000],[4,300],[5,1240]],"loop":false},"poked":{"n":3,"seq":[[0,350],[1,350],[2,900]],"loop":false},"pouting":{"n":2,"seq":[[0,500],[1,700],[0,400],[1,600]],"loop":false},"lifted-right":{"n":1,"seq":[[0,1000]],"loop":true},"lifted-left":{"n":1,"seq":[[0,1000]],"loop":true},"dozing":{"n":3,"seq":[[0,1600],[1,1800],[0,1200],[2,700]],"loop":true},"writing":{"n":15,"seq":[[0,2200],[0,150],[1,140],[2,140],[3,170],[4,180],[5,190],[6,190],[7,240],[8,200],[9,200],[10,220],[11,220],[10,180],[11,180],[12,240],[13,260],[14,240],[10,220],[12,240],[8,300],[7,700]],"loop":true}};
+  const W = 192, H = 256;
+  const imgs = {};
+  const ready = Promise.all(Object.keys(SPR).map((k) => new Promise((res) => {
+    const im = new Image(); im.onload = () => { imgs[k] = im; res(); }; im.onerror = res; im.src = `sprites/${k}.png`;
+  })));
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- pixel-perfect sprite canvas: one art pixel = whole device pixels ----------
+  const cv = document.getElementById('sprite'), g = cv.getContext('2d');
+  function fit() {
+    const dpr = devicePixelRatio || 1;
+    const target = innerWidth < 520 ? 150 : 210;              // css width we aim for
+    const n = Math.max(1, Math.round(target * dpr / W));
+    cv.style.width = `${W * n / dpr}px`; cv.style.height = `${H * n / dpr}px`;
+    return n / dpr;
+  }
+  let px = fit();
+  addEventListener('resize', () => { px = fit(); });
+
+  // 2x2-art-pixel glyphs, like the app's effects
+  const GLY = {
+    sparkle: ['00100', '00100', '11011', '00100', '00100'],
+    heart: ['01010', '11111', '11111', '01110', '00100'],
+    z: ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+  };
+  function glyph(p, x, y, color, a) {
+    const s = 2; g.save(); g.globalAlpha = a; g.fillStyle = '#5a2b20';
+    p.forEach((r, cy) => [...r].forEach((v, cx) => { if (v === '1') for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.fillRect(x + (cx + dx) * s, y + (cy + dy) * s, s, s); }));
+    g.fillStyle = color; p.forEach((r, cy) => [...r].forEach((v, cx) => { if (v === '1') g.fillRect(x + cx * s, y + cy * s, s, s); }));
+    g.restore();
+  }
+
+  let anim = 'idle', t0 = performance.now(), fx = null;
+  function setAnim(name, effect = null) { if (SPR[name]) { anim = name; t0 = performance.now(); } fx = effect; }
+  function frameAt(name, ms) {
+    const s = SPR[name], total = s.seq.reduce((a, b) => a + b[1], 0);
+    let t = s.loop ? ms % total : Math.min(ms, total - 1);
+    for (const [f, d] of s.seq) { if (t < d) return f; t -= d; }
+    return s.seq[s.seq.length - 1][0];
+  }
+  function draw(now) {
+    const ms = now - t0;
+    g.clearRect(0, 0, W, H);
+    const im = imgs[anim];
+    if (im) g.drawImage(im, frameAt(anim, ms) * W, 0, W, H, 0, 0, W, H);
+    if (fx) {
+      const pts = { sparkle: [[28, 34], [158, 20], [42, 74]], heart: [[124, 34], [144, 22], [160, 36]], z: [[122, 74], [138, 62], [154, 50]] }[fx];
+      const colors = fx === 'heart' ? ['#ff6b8a', '#ff8fa6', '#ffb3c2'] : ['#ffc260', '#ffdc8b', '#fff0b4'];
+      pts.forEach(([x, y], i) => {
+        const age = ms - i * 220; if (age < 0) return;
+        const cyc = fx === 'z' ? (age % 2400) : age;
+        const rise = Math.min(8, Math.floor(cyc / 260)) * 2;
+        const a = fx === 'z' ? Math.max(0, 1 - cyc / 2400) : Math.min(1, age / 200);
+        glyph(GLY[fx], x, y - rise, colors[i], a);
+      });
+    }
+  }
+
+  // ---------- the session ----------
+  const $ = (id) => document.getElementById(id);
+  const talk = $('talk'), tag = $('tag'), label = $('label'), log = $('log'), cap = $('cap'), capk = $('capk');
+  const pet = $('pet'), notice = $('notice'), quota = $('quota'), prog = $('prog'), clock = $('clock');
+  let typer = 0;
+  function bubble(text, kind = 'think') {
+    clearInterval(typer);
+    if (!text) { talk.className = 'talk'; return; }
+    talk.className = `talk on ${kind}`;
+    const ch = [...text]; let i = 0; talk.textContent = '';
+    if (reduce) { talk.textContent = text; return; }
+    typer = setInterval(() => { talk.textContent = ch.slice(0, ++i).join(''); if (i >= ch.length) clearInterval(typer); }, 45);
+  }
+  let clockMin = 14 * 60 + 32;
+  function line(ev, state) {
+    clockMin++;
+    const hh = String(Math.floor(clockMin / 60) % 24).padStart(2, '0'), mm = String(clockMin % 60).padStart(2, '0');
+    const d = document.createElement('div'); d.className = 'new';
+    d.innerHTML = `<span class="t">${hh}:${mm}:0${clockMin % 9}</span> 4f2a91c0 <span class="ev">${ev}</span> → <span class="st-${state}">${state}</span>`;
+    log.append(d); while (log.children.length > 14) log.firstChild.remove();
+    clock.textContent = `${hh}:${mm}`;
+  }
+  const show = (el, on) => { el.classList.toggle('on', on); el.setAttribute('aria-hidden', String(!on)); };
+  function setTag(text, s) { label.textContent = text; tag.dataset.s = s; }
+  const clEl = $('cl');
+  function setCl(text = '', attn = false) { clEl.textContent = text; clEl.classList.toggle('attn', attn); }
+  function note(ok, title, text) { $('nDot').className = ok ? 'ok' : ''; $('nTitle').textContent = title; $('nText').textContent = text; show(notice, true); }
+
+  const STEPS = [
+    { chip: '启动', anim: 'connecting', tag: ['连接中', 'idle'], say: '来啦～', log: [['SessionStart', 'connecting']],
+      cap: '新开一个 Claude Code 会话，Hook 写下状态文件，桌宠马上跟上。', ms: 3200 },
+    { chip: '思考', anim: 'thinking', tag: ['思考中', 'working'], think: '嗯…让我想想', log: [['UserPromptSubmit', 'working']],
+      cap: '提交提示词后、还没调用工具时，她托着腮想。工具结束超过 6 秒也会回到这个姿势。', ms: 4400 },
+    { chip: '工具动画', anim: 'read', tag: ['工作中', 'working'], think: '📖 翻翻文件…', log: [['PreToolUse:Read', 'working']],
+      cap: '每种工具一套动画。读文件时捧着书细读。', ms: 3400 },
+    { anim: 'search', tag: ['工作中', 'working'], think: '🔍 找找在哪…', log: [['PostToolUse:Read', 'working'], ['PreToolUse:Grep', 'working']],
+      cap: '搜代码时举起放大镜左右找。', ms: 3400 },
+    { anim: 'terminal', tag: ['工作中', 'working'], think: '⌨️ 跑个命令', log: [['PreToolUse:Bash', 'working']],
+      cap: '跑命令时对着浮空的小键盘敲。', ms: 3400 },
+    { anim: 'web', tag: ['工作中', 'working'], think: '🌐 上网查查', log: [['PreToolUse:WebSearch', 'working']],
+      cap: '上网搜索时托着小地球仪。', ms: 3400 },
+    { anim: 'agents', tag: ['工作中 ×2', 'working'], think: '👯 叫个帮手', log: [['PreToolUse:Agent', 'working']],
+      cap: '派出子代理时，两只向日葵小精灵出来帮忙；多个会话同时在跑，标签会显示 ×2。', ms: 3600 },
+    { chip: '等你', anim: 'waiting', tag: ['等待你', 'waiting'], say: '想问你个问题~', log: [['PreToolUse:AskUserQuestion', 'waiting']],
+      cap: '需要你回答或批准时她会举手。等 30 秒跳一跳，2 分钟在消息框里留言，处理后自动撤掉。', ms: 5200, notice: 2600, hop: 1400 },
+    { chip: '完成', anim: 'complete', fx: 'sparkle', tag: ['完成', 'complete'], say: '搞定！\n用时 1分32秒 · 工具 14 次', log: [['Stop', 'complete']],
+      cap: '一轮结束：报告这一轮的用时和调用了多少次工具。', ms: 4600 },
+    { chip: '戳一戳', anim: 'poked', fx: 'heart', tag: ['空闲', 'idle'], say: '嘿嘿～', log: [['Notification:idle_prompt', 'idle']],
+      cap: '戳她会害羞（工作时戳会鼓脸）。用官方 Claude 登录时，头顶浮出订阅额度卡片：5 小时窗口和本周额度。', ms: 5200, quota: 500 },
+    { chip: '拖拽', anim: 'lifted-right', tag: ['空闲', 'idle'], drag: true,
+      cap: '拖着走：往哪边拖，她的腿就往反方向甩；松手轻轻回弹。', ms: 4200 },
+    { chip: '打瞌睡', anim: 'dozing', fx: 'z', tag: ['空闲', 'idle'],
+      cap: '空闲超过 10 分钟会坐下打瞌睡，戳一下就醒。', ms: 4200 },
+    { chip: 'AFK', anim: 'dozing', fx: 'z', tag: ['AFK · 空闲', 'idle'], log: [['（AFK 开启：只保留集群监督）', 'idle']],
+      cap: 'AFK 挂机：关掉气泡、提醒和闲聊，只留集群作业监督。离开电脑时打开。', ms: 4400 },
+    { chip: '集群', anim: 'waiting', tag: ['AFK · 集群待处理', 'waiting'], cl: ['⚙3+1 ⚠1', true],
+      log: [['cluster summary.py', 'waiting'], ['wake.ps1 -Task attention -Auto', 'working']],
+      note: [700, '集群有 1 件事需要处理', 'batch_0412 · SCF 不收敛 · 已自动唤起 Claude 处理'],
+      at: [[2600, () => { setAnim('plan'); setTag('AFK · 集群处理中', 'working'); setCl('🔧 ⚙3+1 ⚠1', true); }],
+           [4800, () => { setAnim('complete', 'sparkle'); setTag('AFK · 集群', 'complete'); setCl('⚙2', false);
+                          line('batch_ok · packed', 'complete');
+                          note(true, '20261103 全部完成并已打包', '6 批 · 6123 个文件 · 19.0 MB · 20261103_results.tar.gz'); }]],
+      cap: '集群监督：定时用 SSH 读一次集群摘要，作业数直接挂在桌宠标签上。有事要处理时，自动在后台唤起 Claude 处理，完成和打包结果写进消息框。', ms: 8200 },
+  ];
+
+  // chips
+  const chips = $('chips'), playBtn = $('play');
+  STEPS.forEach((s, i) => {
+    if (!s.chip) return;
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = s.chip; b.dataset.i = i;
+    b.addEventListener('click', () => go(i, true)); chips.append(b);
+  });
+  function markChip(i) {
+    let owner = i; while (owner > 0 && !STEPS[owner].chip) owner--;
+    chips.querySelectorAll('button[data-i]').forEach((b) => b.setAttribute('aria-current', String(Number(b.dataset.i) === owner)));
+  }
+
+  let idx = 0, stepStart = 0, playing = !reduce, timers = [], dragRaf = 0;
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  function clearStep() { timers.forEach(clearTimeout); timers = []; cancelAnimationFrame(dragRaf); pet.style.transform = ''; show(notice, false); show(quota, false); quota.querySelectorAll('.bar i').forEach((b) => { b.style.width = '0'; }); }
+  function go(i, user = false) {
+    clearStep();
+    idx = (i + STEPS.length) % STEPS.length;
+    const s = STEPS[idx];
+    stepStart = performance.now();
+    setAnim(s.anim, s.fx || null);
+    setTag(...s.tag);
+    setCl(...(s.cl || []));
+    $('nDot').className = ''; $('nTitle').textContent = 'Claude 在等你'; $('nText').textContent = '会话：claudestatus · 已等 2 分钟';
+    if (s.note) later(() => note(false, s.note[1], s.note[2]), s.note[0]);
+    (s.at || []).forEach(([ms, fn]) => later(fn, ms));
+    bubble(s.say || s.think || '', s.say ? 'say' : 'think');
+    (s.log || []).forEach(([e, st], k) => later(() => line(e, st), 150 + k * 450));
+    cap.textContent = s.cap; capk.textContent = String(idx + 1).padStart(2, '0');
+    markChip(idx);
+    if (s.notice) later(() => show(notice, true), s.notice);
+    if (s.hop) later(() => { pet.classList.remove('hop'); void pet.offsetWidth; pet.classList.add('hop'); }, s.hop);
+    if (s.quota) later(() => { show(quota, true); quota.querySelectorAll('.bar i').forEach((b) => { b.style.width = b.dataset.w + '%'; }); }, s.quota);
+    if (s.drag) startDrag();
+    if (user && !playing) prog.style.width = '0';
+  }
+  function startDrag() {
+    const desk = $('desk'); const span = Math.max(40, desk.clientWidth - pet.offsetWidth - 60);
+    const t = performance.now(); let last = 0, dir = 'right';
+    bubble('');
+    const tick = (now) => {
+      const p = Math.min(1, (now - t) / 3400);
+      // there and back: left, then right, then settle
+      const x = -Math.round(Math.sin(p * Math.PI * 1.5) * span * 0.55);
+      const v = x - last; last = x;
+      const nd = v < -0.5 ? 'left' : v > 0.5 ? 'right' : dir;
+      if (nd !== dir) { dir = nd; setAnim(`lifted-${dir}`); }
+      pet.style.transform = `translate(${x}px, -14px)`;
+      if (p < 1) dragRaf = requestAnimationFrame(tick);
+      else { pet.style.transform = ''; setAnim('idle'); bubble('呼～', 'say'); }
+    };
+    dragRaf = requestAnimationFrame(tick);
+  }
+
+  function loop(now) {
+    draw(now);
+    if (playing) {
+      const s = STEPS[idx], p = (now - stepStart) / s.ms;
+      prog.style.width = `${Math.min(100, ((idx + Math.min(1, p)) / STEPS.length) * 100)}%`;
+      if (p >= 1) go(idx + 1);
+    }
+    requestAnimationFrame(loop);
+  }
+  function setPlaying(on) {
+    playing = on; playBtn.textContent = on ? '❚❚' : '▶'; playBtn.setAttribute('aria-label', on ? '暂停' : '播放');
+    if (on) stepStart = performance.now();
+  }
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+
+  // poke the pet on the page
+  const POKES = ['嘿嘿～', '嗯？', '在呢~', '再戳要生气了！'];
+  function poke() {
+    const busy = tag.dataset.s === 'working';
+    setAnim(busy ? 'pouting' : 'poked', busy ? null : 'heart');
+    bubble(busy ? '在忙啦～' : POKES[Math.floor(Math.random() * POKES.length)], 'say');
+    stepStart = performance.now();             // give the reaction time before the next step
+    later(() => { const s = STEPS[idx]; setAnim(s.anim, s.fx || null); }, 1700);
+  }
+  pet.addEventListener('click', poke);
+  pet.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); poke(); } });
+
+  // tool table with live mini sprites
+  const ROWS = [['read', 'Read', '📖 翻翻文件…'], ['search', 'Grep · Glob', '🔍 找找在哪…'], ['terminal', 'Bash · PowerShell', '⌨️ 跑个命令'],
+    ['web', 'WebSearch · WebFetch', '🌐 上网查查'], ['agents', 'Task · Agent', '👯 叫个帮手'], ['plan', 'TodoWrite', '📝 列个计划'], ['writing', 'Edit · Write · 其他', '✏️ 动手改一改']];
+  const minis = [];
+  const CROP = [28, 30, 136, 120];   // x, y, w, h in art pixels
+  const tb = $('toolrows');
+  ROWS.forEach(([k, tools, say]) => {
+    const tr = document.createElement('tr');
+    // upper-body crop (head + prop), one art pixel = whole device pixels
+    const c = document.createElement('canvas'); c.width = CROP[2]; c.height = CROP[3];
+    const dpr = devicePixelRatio || 1, n = Math.max(1, Math.round(76 * dpr / CROP[2]));
+    c.style.width = `${CROP[2] * n / dpr}px`; c.style.height = `${CROP[3] * n / dpr}px`;
+    const td = document.createElement('td'); td.append(c);
+    tr.append(td);
+    const a = document.createElement('td'); a.className = 'mono'; a.textContent = tools; tr.append(a);
+    const b = document.createElement('td'); b.textContent = say; tr.append(b);
+    tb.append(tr); minis.push([k, c.getContext('2d')]);
+  });
+  function drawMinis(now) {
+    minis.forEach(([k, m]) => {
+      const im = imgs[k]; if (!im) return;
+      m.clearRect(0, 0, CROP[2], CROP[3]);
+      m.drawImage(im, frameAt(k, now) * W + CROP[0], CROP[1], CROP[2], CROP[3], 0, 0, CROP[2], CROP[3]);
+    });
+    if (!reduce) requestAnimationFrame(drawMinis);
+  }
+
+  ready.then(() => {
+    setPlaying(playing);
+    go(0);
+    requestAnimationFrame(loop);
+    requestAnimationFrame(drawMinis);
+  });
+})();
+</script>
+</body>
+</html>
